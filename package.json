@@ -1,0 +1,20 @@
+{
+  "name": "replylocal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ReplyLocal — AI-assisted Google review replies for local businesses",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^14.2.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

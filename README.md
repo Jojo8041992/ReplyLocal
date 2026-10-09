@@ -11,6 +11,8 @@ Paste a customer review, your business name, and a star rating — get a polishe
 - Star-aware tone: thank & invite (5★), acknowledge & invite (3–4★), neutral acknowledgement & invite offline (1–2★)
 - "Needs a human" hold: reviews mentioning injury/damage/legal issues, health, refunds, accessibility, or that look fake/spammy get no draft (see `lib/holdCheck.js`)
 - Optional tone: professional, friendly, or apologetic
+- "Read carefully before posting" caution banner on every 1–2★ draft
+- Topic-aware sentences for wait/timing, pricing, and accessibility reviews
 - Copy-to-clipboard output
 
 **Not included yet:** Google Business Profile OAuth, auto-posting, analytics, or team accounts.
@@ -62,9 +64,14 @@ Response:
 ```json
 {
   "status": "ok",
-  "reply": "Thank you so much for the kind words! ..."
+  "reply": "Thank you so much for the kind words! ...",
+  "caution": false
 }
 ```
+
+Every drafted reply to a 1–2★ review comes back with `"caution": true` (plus `cautionTitle` / `cautionMessage`), and the page shows a **"Read carefully before posting"** banner above the draft. This is a warning, not a hold: the draft is still returned.
+
+Replies to reviews about a **wait**, **pricing**, or **accessibility** use topic-specific sentences (see `lib/reviewTopics.js`) that acknowledge the topic without quoting the review, admitting fault, or promising refunds, discounts, or fixes. Accessibility reviews are still held for a human by `lib/holdCheck.js`, so the accessibility sentence only appears if that hold is bypassed.
 
 If the review needs a person instead of a draft:
 

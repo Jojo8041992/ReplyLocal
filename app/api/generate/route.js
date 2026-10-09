@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { holdCheck } from "../../../lib/holdCheck";
+import { detectTopics } from "../../../lib/reviewTopics";
+import { cautionFor } from "../../../lib/caution";
 
 const TONES = new Set(["professional", "friendly", "apologetic"]);
 
@@ -15,9 +17,64 @@ function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+// Topic sentences (fix 4). Each one names the topic (wait / pricing /
+// accessibility) WITHOUT quoting the review, admitting fault, promising a
+// refund, discount, or fix, or guaranteeing future timing.
+const TOPIC_SENTENCES = {
+  // Acknowledge only; the offline route comes from the 1–2★ closer, or from
+  // accessibilityRoute below on 3–5★ (whose closers invite a return visit).
+  // No statements about legal (e.g. ADA) compliance.
+  accessibility: [
+    `We take accessibility concerns seriously, including any barrier for guests with a disability, and a manager would like to hear more about your visit.`,
+    `Making our space work for guests with a disability matters to us, and a manager would like to follow up with you personally.`,
+    `Access for guests with a disability is important to us, and a manager would like to speak with you about this accessibility concern.`,
+  ],
+  accessibilityRoute: [
+    `Please contact us directly so we can talk with you about it.`,
+    `Please reach out to us privately at your convenience.`,
+  ],
+  waitLow: [
+    `We understand that waiting is frustrating, and we've shared your comments about the wait with our team.`,
+    `Your note about the wait and the timing of your visit has been passed along to the people who manage our schedule.`,
+    `We hear your concern about the wait, and we've shared it with the team responsible for scheduling.`,
+  ],
+  wait: [
+    `Your comments about the wait and timing of your visit have been shared with our team.`,
+    `We've passed your note about the wait along to our team, since timing matters on every visit.`,
+    `Your comments about the wait are helpful, and we've shared them with the people who manage our schedule.`,
+  ],
+  pricingLow: [
+    `We understand pricing matters, and if you have questions about your bill we'd be glad to walk through it with you directly.`,
+    `We're happy to go over any questions about our pricing with you privately.`,
+    `Your comments about pricing have been shared with our team, and we're happy to explain how our prices are set.`,
+  ],
+  pricing: [
+    `Your comments on pricing and value are helpful to our team.`,
+    `We're always happy to explain how our pricing works.`,
+    `Your feedback on pricing and value has been shared with our team.`,
+  ],
+};
+
+const APOLOGY_PREFIX = `We're sorry any part of your visit wasn't perfect, and `;
+
+function topicMiddle(topics, stars) {
+  if (!topics) return null;
+  const low = stars <= 2;
+  const parts = [];
+  if (topics.accessibility) {
+    let a = pick(TOPIC_SENTENCES.accessibility);
+    if (!low) a += ` ${pick(TOPIC_SENTENCES.accessibilityRoute)}`;
+    parts.push(a);
+  }
+  if (topics.wait) parts.push(pick(low ? TOPIC_SENTENCES.waitLow : TOPIC_SENTENCES.wait));
+  if (topics.pricing) parts.push(pick(low ? TOPIC_SENTENCES.pricingLow : TOPIC_SENTENCES.pricing));
+  return parts.length ? parts : null;
+}
+
 // Note: templates never quote or echo the review text back. Echoing can
 // repeat medical claims, competitor names, or pricing claims in public.
-function buildReply({ businessName, stars, tone }) {
+// buildReply only receives topic booleans (from detectTopics), never the text.
+function buildReply({ businessName, stars, tone, topics }) {
   const name = businessName.trim();
 
   const greetFriendly = [
@@ -96,8 +153,26 @@ function buildReply({ businessName, stars, tone }) {
     ]);
   }
 
+  // Fix 4: if the review is about a wait, pricing, or accessibility, use
+  // topic sentences instead of the generic middle line. If several topics
+  // would push the reply past Google's ~500 chars, drop the last-listed
+  // (lowest-priority) topic so the closer is never truncated.
+  const topicParts = topicMiddle(topics, stars);
+  if (topicParts) {
+    const apologyPrefixLen =
+      tone === "apologetic" && stars >= 3 ? APOLOGY_PREFIX.length : 0;
+    const fixedLen = opener.length + closer.length + 2 + apologyPrefixLen;
+    while (
+      topicParts.length > 1 &&
+      fixedLen + topicParts.join(" ").length > 480
+    ) {
+      topicParts.pop();
+    }
+    middle = topicParts.join(" ");
+  }
+
   if (tone === "apologetic" && stars >= 3) {
-    middle = `We're sorry any part of your visit wasn't perfect, and ${middle
+    middle = `${APOLOGY_PREFIX}${middle
       .charAt(0)
       .toLowerCase()}${middle.slice(1)}`;
   }
@@ -146,8 +221,11 @@ export async function POST(request) {
       });
     }
 
-    const reply = buildReply({ businessName, stars, tone });
-    return NextResponse.json({ status: "ok", reply });
+    const topics = detectTopics({ reviewText, stars });
+    const reply = buildReply({ businessName, stars, tone, topics });
+    // Every 1–2★ draft carries caution: true so the UI shows a
+    // "Read carefully before posting" banner. Not a hold.
+    return NextResponse.json({ status: "ok", reply, ...cautionFor(stars) });
   } catch {
     return NextResponse.json(
       { error: "Could not generate a reply. Please try again." },

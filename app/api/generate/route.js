@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { holdCheck } from "../../../lib/holdCheck";
 
 const TONES = new Set(["professional", "friendly", "apologetic"]);
 
@@ -14,11 +15,10 @@ function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function buildReply({ businessName, stars, reviewText, tone }) {
+// Note: templates never quote or echo the review text back. Echoing can
+// repeat medical claims, competitor names, or pricing claims in public.
+function buildReply({ businessName, stars, tone }) {
   const name = businessName.trim();
-  const review = reviewText.trim().replace(/\s+/g, " ");
-  const snippet =
-    review.length > 80 ? `${review.slice(0, 77).trim()}…` : review;
 
   const greetFriendly = [
     `Thank you so much for taking the time to share your experience with ${name}!`,
@@ -30,15 +30,25 @@ function buildReply({ businessName, stars, reviewText, tone }) {
     `We appreciate you taking the time to share your experience with ${name}.`,
     `Thank you for your thoughtful feedback regarding ${name}.`,
   ];
+  // Apologetic tone: sympathy only. Never concede that something went wrong
+  // ("fell short", "didn't meet expectations") — that reads as admitting fault.
   const greetApology = [
-    `We're truly sorry your experience with ${name} fell short.`,
+    `We're sorry to hear about your experience with ${name}.`,
     `Thank you for bringing this to our attention at ${name}.`,
-    `We apologize that your visit to ${name} didn't meet expectations.`,
+    `We're sorry to hear you were disappointed with your visit to ${name}.`,
+  ];
+  // 1–2★ in professional/friendly tone: neutral acknowledgement, no apology.
+  const greetLowNeutral = [
+    `Thank you for sharing your feedback about ${name}.`,
+    `We appreciate you taking the time to tell us about your visit to ${name}.`,
+    `Thank you for taking the time to leave a review for ${name}.`,
   ];
 
   let opener;
-  if (tone === "apologetic" || stars <= 2) {
+  if (tone === "apologetic") {
     opener = pick(greetApology);
+  } else if (stars <= 2) {
+    opener = pick(greetLowNeutral);
   } else if (tone === "friendly") {
     opener = pick(greetFriendly);
   } else {
@@ -50,9 +60,7 @@ function buildReply({ businessName, stars, reviewText, tone }) {
 
   if (stars >= 5) {
     middle = pick([
-      `We're thrilled to hear you enjoyed your visit${
-        snippet ? ` — especially notes like “${snippet}”` : ""
-      }.`,
+      `We're thrilled to hear you enjoyed your visit.`,
       `Hearing feedback like yours keeps our team motivated every day.`,
       `We're so glad we could make a positive impression.`,
     ]);
@@ -73,15 +81,18 @@ function buildReply({ businessName, stars, reviewText, tone }) {
       `We look forward to serving you again and exceeding expectations.`,
     ]);
   } else {
+    // 1–2★: neutral acknowledgement + invitation to talk offline. No line may
+    // admit fault, apologize for a specific failure, or promise a remedy
+    // ("make it right", "resolve this", "correct course", refunds, etc.).
     middle = pick([
-      `That isn't the standard we hold ourselves to, and we'd like the chance to make it right.`,
-      `We're reviewing what happened so we can correct course quickly.`,
-      `Your experience matters, and we take concerns like this seriously.`,
+      `We take all feedback seriously and would like to understand more about your visit.`,
+      `Your experience matters to us, and we'd like to hear more about what happened from your perspective.`,
+      `We've shared your comments with our team.`,
     ]);
     closer = pick([
-      `Please contact us directly so we can discuss this offline and make things right.`,
-      `Reach out to us privately and we'll work with you to resolve this.`,
-      `We invite you to connect with us offline — we'd value the opportunity to rebuild your trust.`,
+      `Please contact us directly so we can discuss this offline.`,
+      `Please reach out to us privately so we can talk this through.`,
+      `We invite you to connect with us offline at your convenience.`,
     ]);
   }
 
@@ -125,8 +136,18 @@ export async function POST(request) {
       );
     }
 
-    const reply = buildReply({ businessName, stars, reviewText, tone });
-    return NextResponse.json({ reply });
+    // Hold/flag check runs BEFORE drafting. Held reviews get no draft at all.
+    const check = holdCheck({ reviewText, stars });
+    if (check.hold) {
+      return NextResponse.json({
+        status: "needs_human",
+        reasons: check.reasons,
+        guidance: check.guidance,
+      });
+    }
+
+    const reply = buildReply({ businessName, stars, tone });
+    return NextResponse.json({ status: "ok", reply });
   } catch {
     return NextResponse.json(
       { error: "Could not generate a reply. Please try again." },

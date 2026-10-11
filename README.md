@@ -8,7 +8,8 @@ Paste a customer review, your business name, and a star rating — get a polishe
 
 - Public landing page with a simple reply generator
 - Rule/template-based replies (no paid AI API keys required)
-- Star-aware tone: thank & invite (5★), acknowledge & invite (3–4★), apologize & invite offline (1–2★)
+- Star-aware tone: thank & invite (5★), acknowledge & invite (3–4★), neutral acknowledgement & invite offline (1–2★)
+- "Needs a human" hold: reviews mentioning injury/damage/legal issues, health, refunds, accessibility, or that look fake/spammy get no draft (see `lib/holdCheck.js`)
 - Optional tone: professional, friendly, or apologetic
 - Copy-to-clipboard output
 
@@ -60,7 +61,18 @@ Response:
 
 ```json
 {
+  "status": "ok",
   "reply": "Thank you so much for the kind words! ..."
+}
+```
+
+If the review needs a person instead of a draft:
+
+```json
+{
+  "status": "needs_human",
+  "reasons": [{ "code": "refund", "label": "Refund, chargeback, compensation, or billing dispute", "matches": ["refund"], "guidance": "..." }],
+  "guidance": "ReplyLocal doesn't draft replies for reviews like this. ..."
 }
 ```
 

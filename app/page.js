@@ -11,6 +11,8 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  // Set when the API says this review needs a person, not a draft.
+  const [hold, setHold] = useState(null);
 
   async function handleGenerate(e) {
     e.preventDefault();
@@ -18,6 +20,7 @@ export default function HomePage() {
     setCopied(false);
     setLoading(true);
     setReply("");
+    setHold(null);
 
     try {
       const res = await fetch("/api/generate", {
@@ -28,6 +31,13 @@ export default function HomePage() {
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || "Something went wrong.");
+      }
+      if (data.status === "needs_human") {
+        setHold({
+          reasons: Array.isArray(data.reasons) ? data.reasons : [],
+          guidance: data.guidance || "",
+        });
+        return;
       }
       setReply(data.reply || "");
     } catch (err) {
@@ -142,7 +152,29 @@ export default function HomePage() {
 
         {error ? <div className="error">{error}</div> : null}
 
-        <div className="output">
+        {hold ? (
+          <div className="hold-panel" role="alert">
+            <h2 className="hold-title">Needs a human</h2>
+            <p>
+              We didn&apos;t draft a reply for this review. It mentions
+              something an owner or manager should read and answer personally:
+            </p>
+            <ul className="hold-reasons">
+              {hold.reasons.map((r) => (
+                <li key={r.code}>
+                  <strong>{r.label}</strong>
+                  {r.guidance ? <span> — {r.guidance}</span> : null}
+                </li>
+              ))}
+            </ul>
+            <p className="hold-note">
+              Take your time, check the facts privately, and avoid admitting
+              fault, promising refunds, or discussing health details in public.
+            </p>
+          </div>
+        ) : null}
+
+        <div className="output" hidden={!!hold}>
           <div className="output-label">
             <label htmlFor="replyOutput" style={{ marginBottom: 0 }}>
               Your reply

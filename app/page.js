@@ -13,6 +13,8 @@ export default function HomePage() {
   const [copied, setCopied] = useState(false);
   // Set when the API says this review needs a person, not a draft.
   const [hold, setHold] = useState(null);
+  // Set when the API flags a 1–2★ draft: show "Read carefully before posting".
+  const [caution, setCaution] = useState(null);
 
   async function handleGenerate(e) {
     e.preventDefault();
@@ -21,6 +23,7 @@ export default function HomePage() {
     setLoading(true);
     setReply("");
     setHold(null);
+    setCaution(null);
 
     try {
       const res = await fetch("/api/generate", {
@@ -40,6 +43,12 @@ export default function HomePage() {
         return;
       }
       setReply(data.reply || "");
+      if (data.caution) {
+        setCaution({
+          title: data.cautionTitle || "Read carefully before posting",
+          message: data.cautionMessage || "",
+        });
+      }
     } catch (err) {
       setError(err.message || "Could not generate a reply.");
     } finally {
@@ -175,6 +184,19 @@ export default function HomePage() {
         ) : null}
 
         <div className="output" hidden={!!hold}>
+          {caution && reply ? (
+            <div
+              className="caution-banner"
+              role="alert"
+              data-testid="caution-banner"
+            >
+              <strong className="caution-title">
+                <span aria-hidden="true">⚠️ </span>
+                {caution.title}
+              </strong>
+              {caution.message ? <p>{caution.message}</p> : null}
+            </div>
+          ) : null}
           <div className="output-label">
             <label htmlFor="replyOutput" style={{ marginBottom: 0 }}>
               Your reply
